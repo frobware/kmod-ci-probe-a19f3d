@@ -38,6 +38,11 @@
  * notrace excludes a function from, so marking these notrace would
  * make them unattachable.
  */
+#define BPFMAN_E2E_DECLARE_TARGET(n)                                 \
+	noinline long bpfman_e2e_target_##n(unsigned long arg);
+BPFMAN_E2E_FOR_EACH_SLOT(BPFMAN_E2E_DECLARE_TARGET)
+#undef BPFMAN_E2E_DECLARE_TARGET
+
 #define BPFMAN_E2E_DEFINE_TARGET(n)                                  \
 	noinline long bpfman_e2e_target_##n(unsigned long arg)       \
 	{                                                            \

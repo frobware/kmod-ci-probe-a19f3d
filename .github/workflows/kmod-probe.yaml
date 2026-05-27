@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Runner kernel
         run: |
@@ -36,7 +36,12 @@ jobs:
       - name: Build module
         run: |
           set -euxo pipefail
-          make -C e2e/kmod
+          cp -rs /lib/modules/$(uname -r)/build kbuild
+          chmod -R u+w kbuild
+          if [ -e /sys/kernel/btf/vmlinux ]; then
+            ln -sf /sys/kernel/btf/vmlinux kbuild/vmlinux
+          fi
+          make -C e2e/kmod KDIR="$PWD/kbuild"
           test -f e2e/kmod/bpfman_e2e_targets.ko
           modinfo e2e/kmod/bpfman_e2e_targets.ko
 
@@ -46,8 +51,10 @@ jobs:
           sudo mount -t debugfs debugfs /sys/kernel/debug || true
           sudo insmod e2e/kmod/bpfman_e2e_targets.ko
           trap 'sudo rmmod bpfman_e2e_targets || true' EXIT
-          test -d /sys/kernel/debug/bpfman_e2e
-          ls -la /sys/kernel/debug/bpfman_e2e
-          test -e /sys/kernel/debug/bpfman_e2e/trigger_000
+          lsmod | grep bpfman_e2e_targets
+          sudo dmesg | tail -100 || true
+          sudo test -d /sys/kernel/debug/bpfman_e2e
+          sudo ls -la /sys/kernel/debug/bpfman_e2e
+          sudo test -e /sys/kernel/debug/bpfman_e2e/trigger_000
           printf x | sudo tee /sys/kernel/debug/bpfman_e2e/trigger_000 >/dev/null
-          dmesg | tail -100
+          sudo dmesg | tail -100 || true

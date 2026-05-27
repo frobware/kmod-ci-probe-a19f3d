@@ -1,0 +1,53 @@
+name: kmod-probe
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  kmod-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner kernel
+        run: |
+          set -euxo pipefail
+          uname -a
+          cat /etc/os-release
+          id
+          ls -ld /lib/modules/$(uname -r) || true
+          ls -ld /lib/modules/$(uname -r)/build || true
+          test -d /lib/modules/$(uname -r)/build
+
+      - name: Install build tools and matching headers
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential kmod linux-headers-$(uname -r)
+
+      - name: Build module
+        run: |
+          set -euxo pipefail
+          make -C e2e/kmod
+          test -f e2e/kmod/bpfman_e2e_targets.ko
+          modinfo e2e/kmod/bpfman_e2e_targets.ko
+
+      - name: Load, trigger, unload
+        run: |
+          set -euxo pipefail
+          sudo mount -t debugfs debugfs /sys/kernel/debug || true
+          sudo insmod e2e/kmod/bpfman_e2e_targets.ko
+          trap 'sudo rmmod bpfman_e2e_targets || true' EXIT
+          test -d /sys/kernel/debug/bpfman_e2e
+          ls -la /sys/kernel/debug/bpfman_e2e
+          test -e /sys/kernel/debug/bpfman_e2e/trigger_000
+          printf x | sudo tee /sys/kernel/debug/bpfman_e2e/trigger_000 >/dev/null
+          dmesg | tail -100

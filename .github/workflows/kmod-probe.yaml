@@ -115,7 +115,6 @@ jobs:
           sudo mkdir -p /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps
           sudo insmod e2e/kmod/bpfman_e2e_targets.ko
           detach_bpf() {
-            sudo bpftool link detach pinned /sys/fs/bpf/kmod-probe/count_fentry || true
             sudo rm -f /sys/fs/bpf/kmod-probe/count_fentry || true
             sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps || true
           }
@@ -149,7 +148,7 @@ jobs:
 
           read_bpf_hits() {
             sudo bpftool -j map dump pinned /sys/fs/bpf/kmod-probe-maps/hits \
-              | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data[0]["value"] if data else 0)'
+              | python3 -c 'import json,sys; data=json.load(sys.stdin); v=data[0]["value"] if data else 0; print(v if isinstance(v,int) else int(v,0) if isinstance(v,str) else int.from_bytes(bytes(int(x,0) if isinstance(x,str) else x for x in v), "little"))'
           }
 
           trigger_before=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)

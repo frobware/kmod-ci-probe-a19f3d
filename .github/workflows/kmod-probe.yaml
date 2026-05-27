@@ -35,12 +35,16 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential dwarves kmod
+          sudo apt-get install -y build-essential clang dwarves kmod libbpf-dev linux-libc-dev llvm pkg-config
           if [ ! -d /lib/modules/$(uname -r)/build ]; then
             sudo apt-get install -y linux-headers-$(uname -r)
           fi
+          sudo apt-get install -y --no-install-recommends linux-tools-generic
+          bpf_bin=$(ls /usr/lib/linux-tools/*-generic/bpftool | head -n 1)
+          sudo ln -sf "$bpf_bin" /usr/local/bin/bpftool
           test -d /lib/modules/$(uname -r)/build
           command -v pahole
+          bpftool version
 
       - name: Build module
         run: |
@@ -81,23 +85,66 @@ jobs:
           test -f e2e/kmod/bpfman_e2e_targets.ko
           modinfo e2e/kmod/bpfman_e2e_targets.ko
 
-      - name: Load, trigger, unload
+      - name: Build fentry BPF object
+        run: |
+          set -euxo pipefail
+          case "$(uname -m)" in
+            x86_64)
+              target_arch=-D__TARGET_ARCH_x86
+              ;;
+            aarch64|arm64)
+              target_arch=-D__TARGET_ARCH_arm64
+              ;;
+            *)
+              echo "unsupported arch $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          multiarch=$(gcc -print-multiarch)
+          clang $(pkg-config --cflags libbpf) -I"/usr/include/${multiarch}" \
+            -g -O2 -target bpfel -c "$target_arch" \
+            bpf/fentry_count.bpf.c -o bpf/fentry_count.bpf.o
+          llvm-objdump -h bpf/fentry_count.bpf.o
+
+      - name: Load, attach, trigger, unload
         run: |
           set -euxo pipefail
           sudo mount -t debugfs debugfs /sys/kernel/debug || true
+          sudo mount -t bpf bpf /sys/fs/bpf || true
+          sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps
+          sudo mkdir -p /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps
           sudo insmod e2e/kmod/bpfman_e2e_targets.ko
-          trap 'sudo rmmod bpfman_e2e_targets || true' EXIT
+          cleanup() {
+            sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps || true
+            sudo rmmod bpfman_e2e_targets || true
+          }
+          trap cleanup EXIT
+
           lsmod | grep bpfman_e2e_targets
-          sudo dmesg | tail -100 || true
           sudo test -d /sys/kernel/debug/bpfman_e2e
           sudo ls -la /sys/kernel/debug/bpfman_e2e
           sudo test -e /sys/kernel/debug/bpfman_e2e/trigger_000
           sudo test -e /sys/kernel/debug/bpfman_e2e/count_000
 
-          before=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
+          sudo bpftool prog loadall bpf/fentry_count.bpf.o /sys/fs/bpf/kmod-probe \
+            pinmaps /sys/fs/bpf/kmod-probe-maps autoattach
+          sudo bpftool prog show pinned /sys/fs/bpf/kmod-probe/count_fentry
+          sudo test -e /sys/fs/bpf/kmod-probe-maps/hits
+
+          read_bpf_hits() {
+            sudo bpftool -j map dump pinned /sys/fs/bpf/kmod-probe-maps/hits \
+              | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data[0]["value"] if data else 0)'
+          }
+
+          trigger_before=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
+          bpf_before=$(read_bpf_hits)
           printf x | sudo tee /sys/kernel/debug/bpfman_e2e/trigger_000 >/dev/null
-          after=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
-          echo "trigger_000 count: before=$before after=$after"
-          test "$after" -eq "$((before + 1))"
+          trigger_after=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
+          bpf_after=$(read_bpf_hits)
+
+          echo "trigger_000 count: before=$trigger_before after=$trigger_after"
+          echo "fentry BPF hits: before=$bpf_before after=$bpf_after"
+          test "$trigger_after" -eq "$((trigger_before + 1))"
+          test "$bpf_after" -eq "$((bpf_before + 1))"
 
           sudo dmesg | tail -100 || true

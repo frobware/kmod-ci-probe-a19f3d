@@ -6,12 +6,15 @@ on:
 
 jobs:
   kmod-probe:
+    name: kmod-probe (${{ matrix.arch }}, ${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          - ubuntu-24.04
-          - ubuntu-latest
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -21,6 +24,7 @@ jobs:
         run: |
           set -euxo pipefail
           uname -a
+          uname -m
           cat /etc/os-release
           id
           ls -ld /lib/modules/$(uname -r) || true
@@ -31,7 +35,12 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential dwarves kmod linux-headers-$(uname -r)
+          sudo apt-get install -y build-essential dwarves kmod
+          if [ ! -d /lib/modules/$(uname -r)/build ]; then
+            sudo apt-get install -y linux-headers-$(uname -r)
+          fi
+          test -d /lib/modules/$(uname -r)/build
+          command -v pahole
 
       - name: Build module
         run: |
@@ -41,7 +50,34 @@ jobs:
           if [ -e /sys/kernel/btf/vmlinux ]; then
             ln -sf /sys/kernel/btf/vmlinux kbuild/vmlinux
           fi
-          make -C e2e/kmod KDIR="$PWD/kbuild" CC=x86_64-linux-gnu-gcc-13
+
+          case "$(uname -m)" in
+            x86_64)
+              cc_prefix=x86_64-linux-gnu
+              ;;
+            aarch64|arm64)
+              cc_prefix=aarch64-linux-gnu
+              ;;
+            *)
+              cc_prefix=
+              ;;
+          esac
+
+          cc_args=()
+          for cc in \
+            "${cc_prefix:+${cc_prefix}-gcc-13}" \
+            "${cc_prefix:+${cc_prefix}-gcc}" \
+            gcc-13 \
+            gcc
+          do
+            if [ -n "$cc" ] && command -v "$cc" >/dev/null 2>&1; then
+              cc_args=("CC=$cc")
+              "$cc" --version | head -1
+              break
+            fi
+          done
+
+          make -C e2e/kmod KDIR="$PWD/kbuild" "${cc_args[@]}"
           test -f e2e/kmod/bpfman_e2e_targets.ko
           modinfo e2e/kmod/bpfman_e2e_targets.ko
 

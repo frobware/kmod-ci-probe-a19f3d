@@ -114,8 +114,13 @@ jobs:
           sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps
           sudo mkdir -p /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps
           sudo insmod e2e/kmod/bpfman_e2e_targets.ko
-          cleanup() {
+          detach_bpf() {
+            sudo bpftool link detach pinned /sys/fs/bpf/kmod-probe/count_fentry || true
+            sudo rm -f /sys/fs/bpf/kmod-probe/count_fentry || true
             sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps || true
+          }
+          cleanup() {
+            detach_bpf
             sudo rmmod bpfman_e2e_targets || true
           }
           trap cleanup EXIT
@@ -149,3 +154,6 @@ jobs:
           test "$bpf_after" -eq "$((bpf_before + 1))"
 
           sudo dmesg | tail -100 || true
+          detach_bpf
+          sudo rmmod bpfman_e2e_targets
+          trap - EXIT

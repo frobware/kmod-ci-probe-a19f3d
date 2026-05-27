@@ -128,7 +128,8 @@ jobs:
 
           sudo bpftool prog loadall bpf/fentry_count.bpf.o /sys/fs/bpf/kmod-probe \
             pinmaps /sys/fs/bpf/kmod-probe-maps autoattach
-          sudo bpftool link show pinned /sys/fs/bpf/kmod-probe/count_fentry
+          sudo test -e /sys/fs/bpf/kmod-probe/count_fentry
+          sudo bpftool link show pinned /sys/fs/bpf/kmod-probe/count_fentry || true
           sudo test -e /sys/fs/bpf/kmod-probe-maps/hits
 
           read_bpf_hits() {

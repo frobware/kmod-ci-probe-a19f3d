@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential kmod linux-headers-$(uname -r)
+          sudo apt-get install -y build-essential dwarves kmod linux-headers-$(uname -r)
 
       - name: Build module
         run: |
@@ -41,7 +41,7 @@ jobs:
           if [ -e /sys/kernel/btf/vmlinux ]; then
             ln -sf /sys/kernel/btf/vmlinux kbuild/vmlinux
           fi
-          make -C e2e/kmod KDIR="$PWD/kbuild"
+          make -C e2e/kmod KDIR="$PWD/kbuild" CC=x86_64-linux-gnu-gcc-13
           test -f e2e/kmod/bpfman_e2e_targets.ko
           modinfo e2e/kmod/bpfman_e2e_targets.ko
 

@@ -119,6 +119,16 @@ jobs:
             sudo rm -f /sys/fs/bpf/kmod-probe/count_fentry || true
             sudo rm -rf /sys/fs/bpf/kmod-probe /sys/fs/bpf/kmod-probe-maps || true
           }
+          unload_kmod() {
+            for attempt in {1..10}; do
+              if sudo rmmod bpfman_e2e_targets; then
+                return 0
+              fi
+              sleep 1
+            done
+            sudo lsmod | grep bpfman_e2e_targets || true
+            return 1
+          }
           cleanup() {
             detach_bpf
             sudo rmmod bpfman_e2e_targets || true
@@ -155,5 +165,5 @@ jobs:
 
           sudo dmesg | tail -100 || true
           detach_bpf
-          sudo rmmod bpfman_e2e_targets
+          unload_kmod
           trap - EXIT

@@ -36,8 +36,8 @@ jobs:
       - name: Build module
         run: |
           set -euxo pipefail
-          cp -rs /lib/modules/$(uname -r)/build kbuild
-          chmod -R u+w kbuild
+          mkdir kbuild
+          cp -rs /lib/modules/$(uname -r)/build/. kbuild/
           if [ -e /sys/kernel/btf/vmlinux ]; then
             ln -sf /sys/kernel/btf/vmlinux kbuild/vmlinux
           fi

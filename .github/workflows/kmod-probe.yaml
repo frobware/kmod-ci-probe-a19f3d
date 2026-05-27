@@ -92,5 +92,12 @@ jobs:
           sudo test -d /sys/kernel/debug/bpfman_e2e
           sudo ls -la /sys/kernel/debug/bpfman_e2e
           sudo test -e /sys/kernel/debug/bpfman_e2e/trigger_000
+          sudo test -e /sys/kernel/debug/bpfman_e2e/count_000
+
+          before=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
           printf x | sudo tee /sys/kernel/debug/bpfman_e2e/trigger_000 >/dev/null
+          after=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
+          echo "trigger_000 count: before=$before after=$after"
+          test "$after" -eq "$((before + 1))"
+
           sudo dmesg | tail -100 || true

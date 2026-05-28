@@ -139,6 +139,13 @@ jobs:
           sudo ls -la /sys/kernel/debug/bpfman_e2e
           sudo test -e /sys/kernel/debug/bpfman_e2e/trigger_000
           sudo test -e /sys/kernel/debug/bpfman_e2e/count_000
+          if sudo test -d /sys/kernel/tracing/events/bpfman_e2e; then
+            trace=/sys/kernel/tracing
+          else
+            trace=/sys/kernel/debug/tracing
+          fi
+          sudo test -f "$trace/events/bpfman_e2e/bpfman_e2e_ping/format"
+          sudo cat "$trace/events/bpfman_e2e/bpfman_e2e_ping/format"
 
           sudo bpftool prog loadall bpf/fentry_count.bpf.o /sys/fs/bpf/kmod-probe \
             pinmaps /sys/fs/bpf/kmod-probe-maps autoattach
@@ -153,7 +160,11 @@ jobs:
 
           trigger_before=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
           bpf_before=$(read_bpf_hits)
+          sudo sh -c "echo > '$trace/trace'"
+          sudo sh -c "echo 1 > '$trace/events/bpfman_e2e/bpfman_e2e_ping/enable'"
           printf x | sudo tee /sys/kernel/debug/bpfman_e2e/trigger_000 >/dev/null
+          sudo grep -q 'bpfman_e2e_ping: slot=0 value=0' "$trace/trace"
+          sudo sh -c "echo 0 > '$trace/events/bpfman_e2e/bpfman_e2e_ping/enable'"
           trigger_after=$(sudo cat /sys/kernel/debug/bpfman_e2e/count_000)
           bpf_after=$(read_bpf_hits)
 
